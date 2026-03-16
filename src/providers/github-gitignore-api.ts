@@ -67,4 +67,14 @@ export class GithubGitignoreApiProvider implements GitignoreProvider {
 
 		await this.client.requestWriteStream(fullUrl, options, writeStream);
 	}
+
+	public async downloadAsString(templatePath: string): Promise<string> {
+		const fullUrl = new url.URL(templatePath, 'https://api.github.com/gitignore/templates/');
+		const options: https.RequestOptions = {
+			agent: getAgent(),
+			method: 'GET',
+			headers: {...await this.client.getHeaders(), 'Accept': 'application/vnd.github.v3.raw'}
+		};
+		return this.client.requestString(fullUrl, options);
+	}
 }

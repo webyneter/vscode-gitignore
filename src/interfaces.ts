@@ -11,6 +11,7 @@ export interface GitignoreTemplate {
 export interface GitignoreProvider {
 	getTemplates(): Promise<GitignoreTemplate[]>;
 	downloadToStream(templatePath: string, writeStream: WriteStream): Promise<void>;
+	downloadAsString(templatePath: string): Promise<string>;
 }
 
 export enum GitignoreOperationType {
@@ -27,5 +28,5 @@ export interface GitignoreOperation {
 	/**
 	 * gitignore template file to use
 	 */
-	template: GitignoreTemplate;
+	templates: GitignoreTemplate[];
 }

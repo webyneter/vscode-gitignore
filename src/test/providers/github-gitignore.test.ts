@@ -85,13 +85,13 @@ providers.forEach(provider => {
 			}
 
 			const operation = <GitignoreOperation>{
-				template: templates.find(t => t.name === 'C'),
+				templates: [templates.find(t => t.name === 'C')!],
 				path: path,
 				type: GitignoreOperationType.Overwrite
 			};
 
 			const fileStream = fs.createWriteStream(operation.path, { flags: "w" });
-			await provider.downloadToStream(operation.template.path, fileStream);
+			await provider.downloadToStream(operation.templates[0].path, fileStream);
 
 			// Assert
 			const fileExists = await fileExits(operation.path);
@@ -116,13 +116,13 @@ providers.forEach(provider => {
 			const path = provider.constructor.name + '.gitignore';
 
 			const operation = <GitignoreOperation>{
-				template: templates.find(t => t.name === 'Python'),
+				templates: [templates.find(t => t.name === 'Python')!],
 				path: path,
 				type: GitignoreOperationType.Overwrite
 			};
 
 			// Act
-			await provider.downloadToStream(operation.template.path, memoryStream);
+			await provider.downloadToStream(operation.templates[0].path, memoryStream);
 
 			// Assert
 			const content = memoryStream.content;
@@ -141,13 +141,13 @@ providers.forEach(provider => {
 			const path = provider.constructor.name + '.gitignore';
 
 			const operation = <GitignoreOperation>{
-				template: templates.find(t => t.name === 'Clojure'),
+				templates: [templates.find(t => t.name === 'Clojure')!],
 				path: path,
 				type: GitignoreOperationType.Overwrite
 			};
 
 			// Act
-			await provider.downloadToStream(operation.template.path, memoryStream);
+			await provider.downloadToStream(operation.templates[0].path, memoryStream);
 
 			// Assert
 			const content = memoryStream.content;
@@ -173,13 +173,13 @@ providers.forEach(provider => {
 			const path = provider.constructor.name + '.gitignore';
 
 			const operation = <GitignoreOperation>{
-				template: templates.find(t => t.name === 'VisualStudioCode'),
+				templates: [templates.find(t => t.name === 'VisualStudioCode')!],
 				path: path,
 				type: GitignoreOperationType.Overwrite
 			};
 
 			// Act
-			await provider.downloadToStream(operation.template.path, memoryStream);
+			await provider.downloadToStream(operation.templates[0].path, memoryStream);
 
 			// Assert
 			const content = memoryStream.content;
@@ -204,13 +204,13 @@ providers.forEach(provider => {
 			const path = provider.constructor.name + '.gitignore';
 
 			const operation = <GitignoreOperation>{
-				template: templates.find(t => t.name === 'Octave'),
+				templates: [templates.find(t => t.name === 'Octave')!],
 				path: path,
 				type: GitignoreOperationType.Overwrite
 			};
 
 			// Act
-			await provider.downloadToStream(operation.template.path, memoryStream);
+			await provider.downloadToStream(operation.templates[0].path, memoryStream);
 
 			// Assert
 			const content = memoryStream.content;
@@ -222,6 +222,16 @@ providers.forEach(provider => {
 			assert(lines[0] === '# Windows default autosave extension');
 			assert(lines[1] === '*.asv');
 			assert(lines[2] === '');
+		});
+
+		test('can download a template as string', async () => {
+			const template = templates.find(t => t.name === 'Python');
+			assert(template !== undefined, 'Python template not found');
+
+			const content = await provider.downloadAsString(template.path);
+			const lines = content.split(/\r?\n/);
+			assert(lines[0] === '# Byte-compiled / optimized / DLL files');
+			assert(lines[1] === '__pycache__/');
 		});
 	});
 

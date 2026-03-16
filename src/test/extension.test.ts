@@ -1,7 +1,7 @@
 // import * as assert from 'assert';
 
 // import * as vscode from 'vscode';
-import { downloadGitignoreFile } from '../extension';
+import { writeGitignoreFile } from '../extension';
 import { GitignoreOperation, GitignoreOperationType, GitignoreProvider, GitignoreTemplate } from '../interfaces';
 import * as fs from 'fs';
 import { createTmpTestDir } from './utils';
@@ -27,6 +27,10 @@ class GitignoreProviderMock implements GitignoreProvider {
 
 			writeStream.end();
 		});
+	}
+
+	downloadAsString(templatePath: string): Promise<string> {
+		return Promise.resolve(templatePath + "\n");
 	}
 
 }
@@ -59,12 +63,12 @@ suite('Extension Test Suite', () => {
 		const templates = await gitignoreProvider.getTemplates();
 
 		const operation = <GitignoreOperation>{
-			template: templates[0],
+			templates: [templates[0]],
 			path: path,
 			type: GitignoreOperationType.Overwrite
 		};
 
-		await downloadGitignoreFile(gitignoreProvider, operation);
+		await writeGitignoreFile(gitignoreProvider, operation);
 
 		const content = fs.readFileSync(path, {encoding: 'utf8'});
 		console.log(content);
@@ -87,12 +91,12 @@ suite('Extension Test Suite', () => {
 		const templates = await gitignoreProvider.getTemplates();
 
 		const operation = <GitignoreOperation>{
-			template: templates[0],
+			templates: [templates[0]],
 			path: path,
 			type: GitignoreOperationType.Overwrite
 		};
 
-		await downloadGitignoreFile(gitignoreProvider, operation);
+		await writeGitignoreFile(gitignoreProvider, operation);
 
 		assertLines(path, 'example', '');
 
@@ -111,16 +115,81 @@ suite('Extension Test Suite', () => {
 		const templates = await gitignoreProvider.getTemplates();
 
 		const operation = <GitignoreOperation>{
-			template: templates[0],
+			templates: [templates[0]],
 			path: path,
 			type: GitignoreOperationType.Append
 		};
 
-		await downloadGitignoreFile(gitignoreProvider, operation);
+		await writeGitignoreFile(gitignoreProvider, operation);
 
 		assertLines(path, 'existing line', '', 'example','');
 
 		// Cleanup
+		if(fs.existsSync(path)) {
+			fs.unlinkSync(path);
+		}
+	});
+
+	test('can write multi-template gitignore file', async () => {
+		const testBaseDir = await createTmpTestDir('download');
+		const path = `${testBaseDir}/.gitignore`;
+
+		const gitignoreProvider = new GitignoreProviderMock();
+
+		const templateA = <GitignoreTemplate>{ name: 'Python', path: 'Python', download_url: '', type: 'file' };
+		const templateB = <GitignoreTemplate>{ name: 'Node', path: 'Node', download_url: '', type: 'file' };
+
+		const operation = <GitignoreOperation>{
+			templates: [templateA, templateB],
+			path: path,
+			type: GitignoreOperationType.Overwrite
+		};
+
+		await writeGitignoreFile(gitignoreProvider, operation);
+
+		const content = fs.readFileSync(path, {encoding: 'utf8'});
+		assert(content.includes('### Python.gitignore ###'));
+		assert(content.includes('### Node.gitignore ###'));
+		assert(content.includes('Python'));
+		assert(content.includes('Node'));
+
+		if(fs.existsSync(path)) {
+			fs.unlinkSync(path);
+		}
+	});
+
+	test('can write multi-template gitignore file with deduplication', async () => {
+		const testBaseDir = await createTmpTestDir('download');
+		const path = `${testBaseDir}/.gitignore`;
+
+		const dedupProvider: GitignoreProvider = {
+			getTemplates: () => Promise.resolve([]),
+			downloadToStream: () => Promise.resolve(),
+			downloadAsString: (templatePath: string) => {
+				if (templatePath === 'A') {
+					return Promise.resolve('node_modules/\n*.log\n');
+				}
+				return Promise.resolve('*.log\ndist/\n');
+			}
+		};
+
+		const templateA = <GitignoreTemplate>{ name: 'A', path: 'A', download_url: '', type: 'file' };
+		const templateB = <GitignoreTemplate>{ name: 'B', path: 'B', download_url: '', type: 'file' };
+
+		const operation = <GitignoreOperation>{
+			templates: [templateA, templateB],
+			path: path,
+			type: GitignoreOperationType.Overwrite
+		};
+
+		await writeGitignoreFile(dedupProvider, operation);
+
+		const content = fs.readFileSync(path, {encoding: 'utf8'});
+		const logOccurrences = content.split('*.log').length - 1;
+		assert(logOccurrences === 1, `Expected *.log to appear once but found ${logOccurrences} times`);
+		assert(content.includes('node_modules/'));
+		assert(content.includes('dist/'));
+
 		if(fs.existsSync(path)) {
 			fs.unlinkSync(path);
 		}
