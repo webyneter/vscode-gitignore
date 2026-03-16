@@ -15,6 +15,12 @@ interface GithubRepositoryItem {
 	type: string;
 }
 
+function isGithubRepositoryItemArray(value: unknown): value is GithubRepositoryItem[] {
+	return Array.isArray(value) && value.every(
+		item => typeof item === 'object' && item !== null && 'name' in item && 'path' in item && 'type' in item
+	);
+}
+
 /**
  * Github gitignore template provider based on the "/repos" endpoint of the Github REST API
  * https://docs.github.com/en/rest/repos/contents
@@ -22,7 +28,7 @@ interface GithubRepositoryItem {
 export class GithubGitignoreRepositoryProvider implements GitignoreProvider {
 	private client: GitHubClient;
 
-	constructor(private cache: Cache, githubSession: GithubSession) {
+	constructor(private cache: Cache<GitignoreTemplate[]>, githubSession: GithubSession) {
 		this.client = new GitHubClient(githubSession);
 	}
 
@@ -35,7 +41,7 @@ export class GithubGitignoreRepositoryProvider implements GitignoreProvider {
 			this.getFiles(),
 			this.getFiles('Global')
 		]);
-		const files = (Array.prototype.concat.apply([], result) as GitignoreTemplate[])
+		const files = result.flat()
 			.sort((a: GitignoreTemplate, b: GitignoreTemplate) => a.name.localeCompare(b.name));
 		return files;
 	}
@@ -45,19 +51,13 @@ export class GithubGitignoreRepositoryProvider implements GitignoreProvider {
 	 */
 	private async getFiles(path = ''): Promise<GitignoreTemplate[]> {
 		// If cached, return cached content
-		const item = this.cache.get('gitignore/' + path) as GitignoreTemplate[];
-		if(typeof item !== 'undefined') {
-			return item;
+		const cached = this.cache.get('gitignore/' + path);
+		if (cached !== undefined) {
+			return cached;
 		}
 
-		/*
-		curl \
-			-H "Accept: application/vnd.github.v3+json" \
-			https://api.github.com/gitignore/templates
-		*/
 		const fullUrl = new url.URL(path, 'https://api.github.com/repos/github/gitignore/contents/');
 
-		// =====> Now we would be able to retrieve headers via async/await
 		const options: https.RequestOptions = {
 			agent: getAgent(),
 			method: 'GET',
@@ -66,14 +66,17 @@ export class GithubGitignoreRepositoryProvider implements GitignoreProvider {
 
 		const responseBody = await this.client.requestString(fullUrl, options);
 
-		const items = JSON.parse(responseBody) as GithubRepositoryItem[];
+		const parsed: unknown = JSON.parse(responseBody);
+		if (!isGithubRepositoryItemArray(parsed)) {
+			throw new Error(`Unexpected GitHub API response shape for path "${path}"`);
+		}
 
-		const templates = items
+		const templates = parsed
 			.filter(item => {
 				return (item.type === 'file' && item.name.endsWith('.gitignore'));
 			})
 			.map(item => {
-				return <GitignoreTemplate>{
+				return {
 					name: item.name.replace(/\.gitignore/, ''),
 					path: item.path
 				};

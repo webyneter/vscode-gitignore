@@ -11,11 +11,14 @@ import { GitHubClient } from '../github/client';
 /**
  * Github gitignore template provider based on "/gitignore/templates" endpoint of the Github REST API
  * https://docs.github.com/en/rest/gitignore
+ *
+ * This provider is an alternative to GithubGitignoreRepositoryProvider. It does not support
+ * subdirectory templates (e.g., Global/). Kept as a fallback and for integration testing.
  */
 export class GithubGitignoreApiProvider implements GitignoreProvider {
 	private client: GitHubClient;
 
-	constructor(private cache: Cache, githubSession: GithubSession) {
+	constructor(private cache: Cache<GitignoreTemplate[]>, githubSession: GithubSession) {
 		this.client = new GitHubClient(githubSession);
 	}
 
@@ -24,16 +27,11 @@ export class GithubGitignoreApiProvider implements GitignoreProvider {
 	 */
 	public async getTemplates(): Promise<GitignoreTemplate[]> {
 		// If cached, return cached content
-		const item = this.cache.get('gitignore') as GitignoreTemplate[];
-		if(typeof item !== 'undefined') {
-			return item;
+		const cached = this.cache.get('gitignore');
+		if (cached !== undefined) {
+			return cached;
 		}
 
-		/*
-		curl \
-			-H "Accept: application/vnd.github.v3+json" \
-			https://api.github.com/gitignore/templates
-		*/
 		const url = 'https://api.github.com/gitignore/templates';
 		const options: https.RequestOptions = {
 			agent: getAgent(),
@@ -42,8 +40,11 @@ export class GithubGitignoreApiProvider implements GitignoreProvider {
 		};
 
 		const responseBody = await this.client.requestString(url, options);
-		const templatesRaw = JSON.parse(responseBody) as string[];
-		const templates = templatesRaw.map(t => <GitignoreTemplate>{ name: t, path: t});
+		const parsed: unknown = JSON.parse(responseBody);
+		if (!Array.isArray(parsed) || !parsed.every(item => typeof item === 'string')) {
+			throw new Error('Unexpected GitHub API response shape for /gitignore/templates');
+		}
+		const templates = parsed.map(t => ({ name: t, path: t }));
 
 		// Cache the retrieved gitignore files
 		this.cache.add(new CacheItem('gitignore', templates));

@@ -116,14 +116,7 @@ function showTemplateQuickPick(templates: GitignoreTemplate[], favoritesManager:
 }
 
 
-// Initialize cache
-// The cache is the only instance shared across the whole lifetime of the extension
-// Everything else should be scoped to the invocation of a command
-const cache = createCache();
-// NOOP: Silence stupid eslint
-createNeverUsedCache();
-
-function createCache() : Cache {
+function createCache() : Cache<GitignoreTemplate[]> {
 	const config = vscode.workspace.getConfiguration('gitignore');
 
 	const cacheExpirationInterval = config.get('cacheExpirationInterval', 3600);
@@ -132,49 +125,22 @@ function createCache() : Cache {
 	return new Cache(cacheExpirationInterval);
 }
 
-/**
- * Create a cache that never caches, used for testing only
- * @returns
- */
-function createNeverUsedCache() : Cache {
-	const cacheExpirationInterval = 0;
-	console.log(`vscode-gitignore: creating cache with cacheExpirationInterval: ${cacheExpirationInterval}`);
+// Initialize cache
+// The cache is the only instance shared across the whole lifetime of the extension
+// Everything else should be scoped to the invocation of a command
+const cache = createCache();
 
-	return new Cache(cacheExpirationInterval);
-}
-
-/**
- * Resolves the workspace folder by
- * - using the single opened workspace
- * - prompting for the workspace to use when multiple workspaces are open
- */
-async function resolveWorkspaceFolder(gitIgnoreTemplates: GitignoreTemplate[]) {
-	const folders = vscode.workspace.workspaceFolders;
-	if (!folders) {
-		throw new CancellationError();
-	}
-	else if (folders.length === 1) {
-		return { templates: gitIgnoreTemplates, path: folders[0].uri.fsPath };
-	}
-	else {
-		const folder = await vscode.window.showWorkspaceFolderPick();
-		if (!folder) {
-			throw new CancellationError();
-		}
-		return { templates: gitIgnoreTemplates, path: folder.uri.fsPath };
+async function checkIfFileExists(path: string): Promise<boolean> {
+	try {
+		await fs.promises.access(path);
+		return true;
+	} catch {
+		return false;
 	}
 }
 
-function checkIfFileExists(path: string) {
-	return new Promise<boolean>((resolve) => {
-		fs.stat(path, (err) => {
-			if (err) {
-				// File does not exists
-				return resolve(false);
-			}
-			return resolve(true);
-		});
-	});
+interface OperationQuickPickItem extends vscode.QuickPickItem {
+	operationType: GitignoreOperationType;
 }
 
 async function checkExistenceAndPromptForOperation(path: string, templates: GitignoreTemplate[]): Promise<GitignoreOperation> {
@@ -189,10 +155,8 @@ async function checkExistenceAndPromptForOperation(path: string, templates: Giti
 	if (!operation) {
 		throw new CancellationError();
 	}
-	const typedString = <keyof typeof GitignoreOperationType>operation.label;
-	const type = GitignoreOperationType[typedString];
 
-	return { path, templates, type };
+	return { path, templates, type: operation.operationType };
 }
 
 export async function writeGitignoreFile(gitignoreRepository: GitignoreProvider, operation: GitignoreOperation) {
@@ -216,31 +180,55 @@ export async function writeGitignoreFile(gitignoreRepository: GitignoreProvider,
 			merged = '\n' + merged;
 		}
 
-		fs.writeFileSync(operation.path, merged, { flag: flags });
+		await fs.promises.writeFile(operation.path, merged, { flag: flags });
 	}
 	catch(error) {
 		if (flags === 'w') {
-			fs.unlink(operation.path, err => {
-				if(err) {
-					console.error(`vscode-gitignore: ${err.message}`);
-				}
-			});
+			try {
+				await fs.promises.unlink(operation.path);
+			} catch (unlinkError) {
+				console.error(`vscode-gitignore: ${unlinkError instanceof Error ? unlinkError.message : String(unlinkError)}`);
+			}
 		}
 		throw error;
 	}
 }
 
 function promptForOperation() {
-	return vscode.window.showQuickPick([
+	return vscode.window.showQuickPick<OperationQuickPickItem>([
 		{
 			label: 'Append',
-			description: 'Append to existing .gitignore file'
+			description: 'Append to existing .gitignore file',
+			operationType: GitignoreOperationType.Append
 		},
 		{
 			label: 'Overwrite',
-			description: 'Overwrite existing .gitignore file'
+			description: 'Overwrite existing .gitignore file',
+			operationType: GitignoreOperationType.Overwrite
 		}
 	]);
+}
+
+/**
+ * Resolves the workspace folder by
+ * - using the single opened workspace
+ * - prompting for the workspace to use when multiple workspaces are open
+ */
+async function resolveWorkspaceFolder(gitIgnoreTemplates: GitignoreTemplate[]) {
+	const folders = vscode.workspace.workspaceFolders;
+	if (!folders) {
+		throw new CancellationError();
+	}
+	else if (folders.length === 1) {
+		return { templates: gitIgnoreTemplates, path: folders[0].uri.fsPath };
+	}
+	else {
+		const folder = await vscode.window.showWorkspaceFolderPick();
+		if (!folder) {
+			throw new CancellationError();
+		}
+		return { templates: gitIgnoreTemplates, path: folder.uri.fsPath };
+	}
 }
 
 function showSuccessMessage(operation: GitignoreOperation) {

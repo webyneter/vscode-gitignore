@@ -1,17 +1,6 @@
-/**
- * Simple in-memory cache
- *
- * There are probably a lot of existing and much more advanced packages in npm,
- * but I had too much fun in implementing it on my own.
- */
-
-export interface CacheItemStore {
-	[key: string]: CacheItem;
-}
-
-export class CacheItem {
+export class CacheItem<T> {
 	private _key: string;
-	private _value: unknown;
+	private _value: T;
 	private storeDate: Date;
 
 	get key() {
@@ -22,57 +11,57 @@ export class CacheItem {
 		return this._value;
 	}
 
-	constructor(key: string, value: unknown) {
+	constructor(key: string, value: T) {
 		this._key = key;
 		this._value = value;
 		this.storeDate = new Date();
 	}
 
 	public isExpired(expirationInterval: number) {
-		return this.storeDate.getTime() + expirationInterval * 1000 < Date.now();
+		return this.storeDate.getTime() + expirationInterval * 1000 <= Date.now();
 	}
 }
 
-export class Cache {
-	/**
-	 * The key value store (a simple JavaScript object)
-	 */
-	private _store: CacheItemStore;
-	/**
-	 * Cache expiration interval in seconds
-	 */
+export class Cache<T = unknown> {
+	private _store: Map<string, CacheItem<T>>;
 	private _cacheExpirationInterval: number;
 
 	constructor(cacheExpirationInterval: number) {
-		this._store = {};
+		this._store = new Map();
 		this._cacheExpirationInterval = cacheExpirationInterval;
 	}
 
-	public add(item: CacheItem) {
-		this._store[item.key] = item;
+	public add(item: CacheItem<T>) {
+		this._store.set(item.key, item);
 	}
 
-	public get(key: string) {
-		const item = this._store[key];
+	public get(key: string): T | undefined {
+		const item = this._store.get(key);
 
-		// Check expiration
-		if(typeof item === 'undefined' || item.isExpired(this._cacheExpirationInterval)) {
+		if (!item) {
 			return undefined;
 		}
-		else {
-			return item.value;
+
+		if (item.isExpired(this._cacheExpirationInterval)) {
+			this._store.delete(key);
+			return undefined;
 		}
+
+		return item.value;
 	}
 
-	public getCacheItem(key: string) {
-		const item = this._store[key];
+	public getCacheItem(key: string): CacheItem<T> | undefined {
+		const item = this._store.get(key);
 
-		// Check expiration
-		if(typeof item === 'undefined' || item.isExpired(this._cacheExpirationInterval)) {
+		if (!item) {
 			return undefined;
 		}
-		else {
-			return item;
+
+		if (item.isExpired(this._cacheExpirationInterval)) {
+			this._store.delete(key);
+			return undefined;
 		}
+
+		return item;
 	}
 }

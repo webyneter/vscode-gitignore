@@ -8,12 +8,12 @@
 	"icon": "icon.png",
 	"repository": {
 		"type": "git",
-		"url": "https://github.com/CodeZombieCH/vscode-gitignore"
+		"url": "https://github.com/webyneter/vscode-gitignore"
 	},
 	"bugs": {
-		"url": "https://github.com/CodeZombieCH/vscode-gitignore/issues"
+		"url": "https://github.com/webyneter/vscode-gitignore/issues"
 	},
-	"homepage": "https://github.com/CodeZombieCH/vscode-gitignore",
+	"homepage": "https://github.com/webyneter/vscode-gitignore",
 	"license": "MIT",
 	"engines": {
 		"vscode": "^1.66.0"

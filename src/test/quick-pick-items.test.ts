@@ -3,29 +3,10 @@ import * as vscode from 'vscode';
 import { GitignoreTemplate } from '../interfaces';
 import { buildQuickPickItems } from '../extension';
 import { FavoritesManager } from '../favorites';
-
-class MockMemento implements vscode.Memento {
-	private storage = new Map<string, unknown>();
-
-	keys(): readonly string[] {
-		return [...this.storage.keys()];
-	}
-
-	get<T>(key: string, defaultValue?: T): T {
-		if (this.storage.has(key)) {
-			return this.storage.get(key) as T;
-		}
-		return defaultValue as T;
-	}
-
-	update(key: string, value: unknown): Thenable<void> {
-		this.storage.set(key, value);
-		return Promise.resolve();
-	}
-}
+import { MockMemento } from './utils';
 
 function makeTemplate(name: string): GitignoreTemplate {
-	return { name, path: `${name}.gitignore`, download_url: '', type: 'file' };
+	return { name, path: `${name}.gitignore` };
 }
 
 suite('buildQuickPickItems', () => {

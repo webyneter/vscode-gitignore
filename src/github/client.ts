@@ -1,5 +1,4 @@
 import * as https from 'https';
-import * as fs from 'fs';
 import * as url from 'url';
 
 import { getDefaultHeaders } from "../http-client";
@@ -57,7 +56,7 @@ export class GitHubClient {
 						return reject(error);
 					}
 					else {
-						return reject(new Error('Shit hit the fan, we are not using proper errors'));
+						return reject(new Error('Unexpected non-Error exception during rate limit check'));
 					}
 				}
 
@@ -86,40 +85,6 @@ export class GitHubClient {
 		});
 	}
 
-	requestWriteStream(url: string | url.URL, options: https.RequestOptions, stream: fs.WriteStream) : Promise<void> {
-		return new Promise((resolve, reject) => {
-			const req = https.request(url, options, res => {
-				try {
-					this.checkRateLimit(res);
-				}
-				catch(error) {
-					if (error instanceof Error) {
-						return reject(error);
-					}
-					else {
-						return reject(new Error('Shit hit the fan, we are not using proper errors'));
-					}
-				}
-
-				if(res.statusCode !== 200) {
-					return reject(new Error(`Download failed with status code ${res.statusCode}`));
-				}
-
-				res.pipe(stream);
-
-				stream.on('finish', () => {
-					stream.close();
-					resolve();
-				});
-			})
-			.on('error', err => {
-				return reject(err);
-			});
-
-			req.end();
-		});
-	}
-
 	/**
 	 * Checks the current GitHub API rate limit by parsing the corresponding response header.
 	 * Throws a GithubApiRateLimitReached error if the request failed and the rate limit was reached.
@@ -138,11 +103,6 @@ export class GitHubClient {
 		if (response.statusCode && response.statusCode >= 400 && rateLimitRemaining < 1) {
 			throw new GithubApiRateLimitReachedError('GitHub API rate limit reached');
 		}
-
-		// DEBUGGING
-		// if (rateLimitRemaining < 60) {
-		// 	throw new GithubApiRateLimitReached('GitHub API rate limit reached');
-		// }
 
 		return rateLimitRemaining;
 	}

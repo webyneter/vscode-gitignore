@@ -1,8 +1,6 @@
 export interface GitignoreTemplate {
 	name: string;
 	path: string;
-	download_url: string;
-	type: string;
 }
 
 export interface GitignoreProvider {
@@ -11,8 +9,8 @@ export interface GitignoreProvider {
 }
 
 export enum GitignoreOperationType {
-	Append,
-	Overwrite
+	Append = 'Append',
+	Overwrite = 'Overwrite'
 }
 
 export interface GitignoreOperation {

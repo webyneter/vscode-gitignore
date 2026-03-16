@@ -3,7 +3,7 @@ import { HttpsProxyAgent } from 'https-proxy-agent';
 import { Agent } from 'http';
 
 
-export const userAgent = 'vscode-gitignore-extension (https://github.com/CodeZombieCH/vscode-gitignore)';
+export const userAgent = 'vscode-gitignore-extension (https://github.com/webyneter/vscode-gitignore)';
 
 function getProxyConfig(): string | undefined {
 	// Read proxy configuration
@@ -19,19 +19,13 @@ function getProxyConfig(): string | undefined {
 	return proxy;
 }
 
-let agent: Agent | undefined;
-
-export function getAgent() {
-	if (agent) {
-		return agent;
-	}
-
+export function getAgent(): Agent | undefined {
 	const proxy = getProxyConfig();
 	if (proxy) {
-		agent = new HttpsProxyAgent(proxy);
+		return new HttpsProxyAgent(proxy);
 	}
 
-	return agent;
+	return undefined;
 }
 
 export function getDefaultHeaders() {
