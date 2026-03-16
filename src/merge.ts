@@ -1,9 +1,13 @@
-interface TemplateSection {
+export interface TemplateSection {
 	name: string;
 	content: string;
 }
 
 export function mergeTemplates(sections: TemplateSection[], deduplicate: boolean): string {
+	if (sections.length === 0) {
+		return '';
+	}
+
 	if (sections.length === 1) {
 		return sections[0].content;
 	}
@@ -24,7 +28,8 @@ export function deduplicateLines(content: string): string {
 	for (const line of lines) {
 		const trimmed = line.trimEnd();
 
-		if (trimmed === '' || trimmed.startsWith('#') || /^### .+ ###$/.test(trimmed)) {
+		// Preserve blank lines and section headers from deduplication
+		if (trimmed === '' || /^### .+\.gitignore ###$/.test(trimmed)) {
 			result.push(line);
 			continue;
 		}

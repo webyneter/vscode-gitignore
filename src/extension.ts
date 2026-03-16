@@ -7,7 +7,7 @@ import { GitignoreTemplate, GitignoreOperation, GitignoreOperationType, Gitignor
 import { GithubGitignoreRepositoryProvider } from './providers/github-gitignore-repository';
 import { AuthenticationCancellationError, GithubContext, GithubSession } from './github/session';
 import { GithubApiRateLimitReachedError } from './github/client';
-import { mergeTemplates } from './merge';
+import { mergeTemplates, TemplateSection } from './merge';
 
 
 class CancellationError extends Error {
@@ -106,7 +106,7 @@ export async function writeGitignoreFile(gitignoreRepository: GitignoreProvider,
 			operation.templates.map(t => gitignoreRepository.downloadAsString(t.path))
 		);
 
-		const sections = operation.templates.map((t, i) => ({
+		const sections: TemplateSection[] = operation.templates.map((t, i) => ({
 			name: t.name,
 			content: contents[i]
 		}));

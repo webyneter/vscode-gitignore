@@ -31,16 +31,17 @@ suite('Merge Module', () => {
 		assert(result.includes('dist/'));
 	});
 
-	test('deduplication preserves comments and blank lines', () => {
-		const content = '# comment\n*.log\n\n# another comment\n*.log\n';
+	test('deduplication deduplicates comments and preserves blank lines', () => {
+		const content = '# comment\n*.log\n\n# comment\n*.log\n# another comment\n';
 		const result = deduplicateLines(content);
 
 		const comments = result.split('# comment').length - 1;
-		assert.strictEqual(comments, 1);
+		assert.strictEqual(comments, 1, 'duplicate comments should be removed');
 		const anotherComments = result.split('# another comment').length - 1;
 		assert.strictEqual(anotherComments, 1);
 		const logCount = result.split('*.log').length - 1;
 		assert.strictEqual(logCount, 1);
+		assert(result.includes('\n\n'), 'blank lines should be preserved');
 	});
 
 	test('deduplication preserves section headers', () => {
@@ -66,5 +67,20 @@ suite('Merge Module', () => {
 	test('empty content handled correctly', () => {
 		const result = mergeTemplates([{ name: 'Empty', content: '' }], false);
 		assert.strictEqual(result, '');
+	});
+
+	test('empty sections array returns empty string', () => {
+		const result = mergeTemplates([], false);
+		assert.strictEqual(result, '');
+	});
+
+	test('deduplication removes duplicate comments', () => {
+		const result = mergeTemplates([
+			{ name: 'A', content: '# Compiled source\n*.o' },
+			{ name: 'B', content: '# Compiled source\n*.class' }
+		], true);
+
+		const commentCount = result.split('# Compiled source').length - 1;
+		assert.strictEqual(commentCount, 1, `Expected 1 occurrence of comment but found ${commentCount}`);
 	});
 });
