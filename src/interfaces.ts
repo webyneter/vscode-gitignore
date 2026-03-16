@@ -1,6 +1,3 @@
-import { WriteStream } from "fs";
-
-
 export interface GitignoreTemplate {
 	name: string;
 	path: string;
@@ -10,7 +7,7 @@ export interface GitignoreTemplate {
 
 export interface GitignoreProvider {
 	getTemplates(): Promise<GitignoreTemplate[]>;
-	downloadToStream(templatePath: string, writeStream: WriteStream): Promise<void>;
+	downloadAsString(templatePath: string): Promise<string>;
 }
 
 export enum GitignoreOperationType {
@@ -25,7 +22,7 @@ export interface GitignoreOperation {
 	 */
 	path: string;
 	/**
-	 * gitignore template file to use
+	 * gitignore template files to use
 	 */
-	template: GitignoreTemplate;
+	templates: GitignoreTemplate[];
 }

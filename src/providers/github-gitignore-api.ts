@@ -1,6 +1,5 @@
 import * as https from 'https';
 import * as url from 'url';
-import { WriteStream } from 'fs';
 
 
 import { Cache, CacheItem } from '../cache';
@@ -52,19 +51,13 @@ export class GithubGitignoreApiProvider implements GitignoreProvider {
 		return templates;
 	}
 
-	public async downloadToStream(templatePath: string, writeStream: WriteStream): Promise<void> {
-		/*
-		curl \
-			-H "Accept: application/vnd.github.v3.raw" \
-			https://api.github.com/gitignore/templates/Clojure
-		*/
+	public async downloadAsString(templatePath: string): Promise<string> {
 		const fullUrl = new url.URL(templatePath, 'https://api.github.com/gitignore/templates/');
 		const options: https.RequestOptions = {
 			agent: getAgent(),
 			method: 'GET',
 			headers: {...await this.client.getHeaders(), 'Accept': 'application/vnd.github.v3.raw'}
 		};
-
-		await this.client.requestWriteStream(fullUrl, options, writeStream);
+		return this.client.requestString(fullUrl, options);
 	}
 }
