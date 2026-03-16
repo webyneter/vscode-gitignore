@@ -8,14 +8,111 @@ import { GithubGitignoreRepositoryProvider } from './providers/github-gitignore-
 import { AuthenticationCancellationError, GithubContext, GithubSession } from './github/session';
 import { GithubApiRateLimitReachedError } from './github/client';
 import { mergeTemplates, TemplateSection } from './merge';
+import { FavoritesManager } from './favorites';
 
 
 class CancellationError extends Error {
 
 }
 
-interface GitignoreQuickPickItem extends vscode.QuickPickItem {
-	template: GitignoreTemplate;
+export interface GitignoreQuickPickItem extends vscode.QuickPickItem {
+	template?: GitignoreTemplate;
+}
+
+const starFullButton: vscode.QuickInputButton = {
+	iconPath: new vscode.ThemeIcon('star-full'),
+	tooltip: 'Remove from favorites'
+};
+const starEmptyButton: vscode.QuickInputButton = {
+	iconPath: new vscode.ThemeIcon('star-empty'),
+	tooltip: 'Add to favorites'
+};
+
+export function buildQuickPickItems(templates: GitignoreTemplate[], starredPaths: Set<string>): GitignoreQuickPickItem[] {
+	const starred: GitignoreQuickPickItem[] = [];
+	const other: GitignoreQuickPickItem[] = [];
+
+	for (const t of templates) {
+		const isStarred = starredPaths.has(t.path);
+		const item: GitignoreQuickPickItem = {
+			label: t.name,
+			description: t.path,
+			template: t,
+			buttons: [isStarred ? starFullButton : starEmptyButton]
+		};
+		if (isStarred) {
+			starred.push(item);
+		} else {
+			other.push(item);
+		}
+	}
+
+	const items: GitignoreQuickPickItem[] = [];
+	if (starred.length > 0) {
+		items.push({ label: 'Starred', kind: vscode.QuickPickItemKind.Separator });
+		items.push(...starred);
+		if (other.length > 0) {
+			items.push({ label: 'Other', kind: vscode.QuickPickItemKind.Separator });
+		}
+	}
+	items.push(...other);
+	return items;
+}
+
+function showTemplateQuickPick(templates: GitignoreTemplate[], favoritesManager: FavoritesManager): Promise<GitignoreTemplate[]> {
+	return new Promise<GitignoreTemplate[]>((resolve, reject) => {
+		const quickPick = vscode.window.createQuickPick<GitignoreQuickPickItem>();
+		quickPick.canSelectMany = true;
+		quickPick.placeholder = 'Select one or more .gitignore templates';
+		quickPick.items = buildQuickPickItems(templates, favoritesManager.getStarredPaths());
+		quickPick.keepScrollPosition = true;
+
+		let resolved = false;
+
+		quickPick.onDidTriggerItemButton(async (e) => {
+			const item = e.item;
+			if (!item.template) {
+				return;
+			}
+			await favoritesManager.toggle(item.template.path);
+
+			const savedValue = quickPick.value;
+			const savedSelection = [...quickPick.selectedItems];
+			quickPick.items = buildQuickPickItems(templates, favoritesManager.getStarredPaths());
+			quickPick.value = savedValue;
+
+			// Restore selection by matching template paths
+			const selectedPaths = new Set(savedSelection.filter(i => i.template).map(i => i.template!.path));
+			quickPick.selectedItems = quickPick.items.filter(i => i.template && selectedPaths.has(i.template.path));
+		});
+
+		quickPick.onDidAccept(() => {
+			if (resolved) {
+				return;
+			}
+			resolved = true;
+			const selected = quickPick.selectedItems
+				.filter(i => i.template)
+				.map(i => i.template!);
+			quickPick.dispose();
+			if (selected.length === 0) {
+				reject(new CancellationError());
+			} else {
+				resolve(selected);
+			}
+		});
+
+		quickPick.onDidHide(() => {
+			if (resolved) {
+				return;
+			}
+			resolved = true;
+			quickPick.dispose();
+			reject(new CancellationError());
+		});
+
+		quickPick.show();
+	});
 }
 
 
@@ -165,6 +262,7 @@ export function activate(context: vscode.ExtensionContext) {
 	console.log('vscode-gitignore: extension activated');
 
 	const githubContext = new GithubContext();
+	const favoritesManager = new FavoritesManager(context.globalState);
 
 	const disposable = vscode.commands.registerCommand('gitignore.addgitignore', async () => {
 		const githubSession = new GithubSession(githubContext);
@@ -183,25 +281,14 @@ export function activate(context: vscode.ExtensionContext) {
 			const templates = await gitignoreRepository.getTemplates();
 
 			// Let the user pick gitignore file(s)
-			const items = templates.map(t => <GitignoreQuickPickItem>{
-				label: t.name,
-				description: t.path,
-				url: t.download_url,
-				template: t
-			});
-			const selectedItems = await vscode.window.showQuickPick(items, { canPickMany: true });
-
-			// Check if the user picked any gitignore files
-			if (!selectedItems || selectedItems.length === 0) {
-				throw new CancellationError();
-			}
+			const selectedTemplates = await showTemplateQuickPick(templates, favoritesManager);
 
 			// Resolve the path to the folder where we should write the gitignore file
-			const { templates: selectedTemplates, path } = await resolveWorkspaceFolder(selectedItems.map(i => i.template));
+			const { templates: resolvedTemplates, path } = await resolveWorkspaceFolder(selectedTemplates);
 
 			// Calculate operation
 			console.log(`vscode-gitignore: add/append gitignore for directory: ${path}`);
-			const operation = await checkExistenceAndPromptForOperation(path, selectedTemplates);
+			const operation = await checkExistenceAndPromptForOperation(path, resolvedTemplates);
 
 			// Store the file on file system
 			await writeGitignoreFile(gitignoreRepository, operation);
