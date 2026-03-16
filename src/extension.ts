@@ -7,6 +7,7 @@ import { GitignoreTemplate, GitignoreOperation, GitignoreOperationType, Gitignor
 import { GithubGitignoreRepositoryProvider } from './providers/github-gitignore-repository';
 import { AuthenticationCancellationError, GithubContext, GithubSession } from './github/session';
 import { GithubApiRateLimitReachedError } from './github/client';
+import { mergeTemplates, TemplateSection } from './merge';
 
 
 class CancellationError extends Error {
@@ -50,25 +51,20 @@ function createNeverUsedCache() : Cache {
  * - using the single opened workspace
  * - prompting for the workspace to use when multiple workspaces are open
  */
-async function resolveWorkspaceFolder(gitIgnoreTemplate: GitignoreTemplate) {
+async function resolveWorkspaceFolder(gitIgnoreTemplates: GitignoreTemplate[]) {
 	const folders = vscode.workspace.workspaceFolders;
-	// folders being falsy can have two reasons:
-	// 1. no folder (workspace) open
-	//    --> should never be the case as already handled before
-	// 2. the version of vscode does not support the workspaces
-	//    --> should never be the case as we require a vscode with support for it
 	if (!folders) {
 		throw new CancellationError();
 	}
 	else if (folders.length === 1) {
-		return { template: gitIgnoreTemplate, path: folders[0].uri.fsPath };
+		return { templates: gitIgnoreTemplates, path: folders[0].uri.fsPath };
 	}
 	else {
 		const folder = await vscode.window.showWorkspaceFolderPick();
 		if (!folder) {
 			throw new CancellationError();
 		}
-		return { template: gitIgnoreTemplate, path: folder.uri.fsPath };
+		return { templates: gitIgnoreTemplates, path: folder.uri.fsPath };
 	}
 }
 
@@ -84,13 +80,12 @@ function checkIfFileExists(path: string) {
 	});
 }
 
-async function checkExistenceAndPromptForOperation(path: string, template: GitignoreTemplate): Promise<GitignoreOperation> {
+async function checkExistenceAndPromptForOperation(path: string, templates: GitignoreTemplate[]): Promise<GitignoreOperation> {
 	path = joinPath(path, '.gitignore');
 
 	const exists = await checkIfFileExists(path);
 	if (!exists) {
-		// File does not exists -> we are fine to create it
-		return { path, template, type: GitignoreOperationType.Overwrite };
+		return { path, templates, type: GitignoreOperationType.Overwrite };
 	}
 
 	const operation = await promptForOperation();
@@ -100,25 +95,34 @@ async function checkExistenceAndPromptForOperation(path: string, template: Gitig
 	const typedString = <keyof typeof GitignoreOperationType>operation.label;
 	const type = GitignoreOperationType[typedString];
 
-	return { path, template, type };
+	return { path, templates, type };
 }
 
-export async function downloadGitignoreFile(gitignoreRepository: GitignoreProvider, operation: GitignoreOperation) {
+export async function writeGitignoreFile(gitignoreRepository: GitignoreProvider, operation: GitignoreOperation) {
 	const flags = operation.type === GitignoreOperationType.Overwrite ? 'w' : 'a';
-	const fileStream = fs.createWriteStream(operation.path, { flags: flags });
-
-	// If appending to the existing .gitignore file, write a NEWLINE as separator
-	if(flags === 'a') {
-		fileStream.write('\n');
-	}
 
 	try {
-		// Store the file on file system
-		await gitignoreRepository.downloadToStream(operation.template.path, fileStream);
+		const contents = await Promise.all(
+			operation.templates.map(t => gitignoreRepository.downloadAsString(t.path))
+		);
+
+		const sections: TemplateSection[] = operation.templates.map((t, i) => ({
+			name: t.name,
+			content: contents[i]
+		}));
+
+		const config = vscode.workspace.getConfiguration('gitignore');
+		const deduplicate = config.get('deduplicateLines', true);
+		let merged = mergeTemplates(sections, deduplicate);
+
+		if (flags === 'a') {
+			merged = '\n' + merged;
+		}
+
+		fs.writeFileSync(operation.path, merged, { flag: flags });
 	}
 	catch(error) {
-		// Delete the .gitignore file if we created it
-		if(flags === 'w') {
+		if (flags === 'w') {
 			fs.unlink(operation.path, err => {
 				if(err) {
 					console.error(`vscode-gitignore: ${err.message}`);
@@ -143,11 +147,15 @@ function promptForOperation() {
 }
 
 function showSuccessMessage(operation: GitignoreOperation) {
+	const templateDesc = operation.templates.length === 1
+		? operation.templates[0].path
+		: `${operation.templates.length} templates`;
+
 	switch (operation.type) {
 		case GitignoreOperationType.Append:
-			return vscode.window.showInformationMessage(`Appended ${operation.template.path} to the existing .gitignore in the project root`);
+			return vscode.window.showInformationMessage(`Appended ${templateDesc} to the existing .gitignore in the project root`);
 		case GitignoreOperationType.Overwrite:
-			return vscode.window.showInformationMessage(`Created .gitignore file in the project root based on ${operation.template.path}`);
+			return vscode.window.showInformationMessage(`Created .gitignore file in the project root based on ${templateDesc}`);
 		default:
 			throw new Error('Unsupported operation');
 	}
@@ -174,30 +182,29 @@ export function activate(context: vscode.ExtensionContext) {
 			// Load templates
 			const templates = await gitignoreRepository.getTemplates();
 
-			// Let the user pick a gitignore file
+			// Let the user pick gitignore file(s)
 			const items = templates.map(t => <GitignoreQuickPickItem>{
 				label: t.name,
 				description: t.path,
 				url: t.download_url,
 				template: t
 			});
-			// TODO: use thenable for items
-			const selectedItem = await vscode.window.showQuickPick(items);
+			const selectedItems = await vscode.window.showQuickPick(items, { canPickMany: true });
 
-			// Check if the user picked up a gitignore file fetched from Github
-			if (!selectedItem) {
+			// Check if the user picked any gitignore files
+			if (!selectedItems || selectedItems.length === 0) {
 				throw new CancellationError();
 			}
 
 			// Resolve the path to the folder where we should write the gitignore file
-			const { template, path } = await resolveWorkspaceFolder(selectedItem.template);
+			const { templates: selectedTemplates, path } = await resolveWorkspaceFolder(selectedItems.map(i => i.template));
 
 			// Calculate operation
 			console.log(`vscode-gitignore: add/append gitignore for directory: ${path}`);
-			const operation = await checkExistenceAndPromptForOperation(path, template);
+			const operation = await checkExistenceAndPromptForOperation(path, selectedTemplates);
 
 			// Store the file on file system
-			await downloadGitignoreFile(gitignoreRepository, operation);
+			await writeGitignoreFile(gitignoreRepository, operation);
 
 			// Show success message
 			await showSuccessMessage(operation);
